@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日本收據批量辨識系統 (精密翻譯+圖文對照版)</title>
+    <title>日本收據批量辨識系統</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 1200px; margin: 20px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
         h2 { color: #1a1a1a; text-align: center; }
         .upload-area { border: 3px dashed #0056b3; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; background-color: #fff; border-radius: 10px; font-size: 18px; font-weight: bold; transition: 0.3s; }
-        .upload-area:hover { background-color: #e9f2ff; }
+        /* 拖曳照片懸停時的視覺效果 */
+        .upload-area.dragover { background-color: #e9f2ff; border-color: #28a745; }
         .btn-container { margin: 20px 0; text-align: right; }
         .btn { background-color: #28a745; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .btn:disabled { background-color: #bbb; cursor: not-allowed; box-shadow: none; }
@@ -29,11 +30,10 @@
 </head>
 <body>
 
-    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統V0.2</h2>
-    <p style="text-align:center; color: #666;">【精準修正版】支援原圖即時對照、長詞優先繁中字典翻譯，完美隔絕電話號碼雜訊。</p>
+    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統V0.3</h2>
 
-    <div class="upload-area" onclick="document.getElementById('file-input').click()">
-        📸 點擊此處或拖曳「一次選取多張」收據照片上傳
+    <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        📸 點擊此處或直接「拖曳多張收據照片」至此處上傳
         <input type="file" id="file-input" accept="image/*" multiple style="display:none">
     </div>
 
@@ -45,7 +45,7 @@
     </div>
 
     <div class="btn-container">
-        <button class="btn" id="export-btn" onclick="exportToCSV()" disabled>📥 匯出為 CSV (包含繁中精準翻譯)</button>
+        <button class="btn" id="export-btn" onclick="exportToCSV()" disabled>📥 匯出為 CSV (品項獨立拆行)</button>
     </div>
 
     <div class="table-responsive">
@@ -69,6 +69,7 @@
 
     <script>
         const fileInput = document.getElementById('file-input');
+        const dropZone = document.getElementById('drop-zone');
         const statusText = document.getElementById('status-text');
         const progressBar = document.getElementById('progress-bar');
         const tableBody = document.getElementById('result-table-body');
@@ -76,75 +77,72 @@
         
         let allReceiptsData = [];
 
-        // 🇯🇵 繁體中文精準翻譯字典庫 (長詞優先排列，徹底解決字詞打結與誤判)
+        // 🇯🇵 繁體中文精準翻譯字典庫
         const translationDictionary = {
-            // 果乾與零食類
-            "ドライりんご": "蘋果乾",
-            "ドライみかん": "橘子乾",
-            "ドライ": "果乾",
-            
-            // 熟食與烤物類
-            "ジャンボ焼きとり": "特大烤雞肉串",
-            "ジャンボ焼鳥": "特大烤雞肉串",
-            "焼鳥ももタレ": "醬汁雞腿肉串",
-            "焼きとり": "烤雞肉串",
-            "焼鳥もも": "雞腿肉串",
-            "焼鳥": "烤雞肉串",
-            "もも": "雞肉(雞腿)",
-            "タレ": "醬汁",
-            "塩": "鹽味",
-            "ジャンボ": "特大",
-            
-            // 飲料與咖啡類
-            "クラフトボスラテ": "CRAFT BOSS 拿鐵",
-            "クラフトボス": "CRAFT BOSS 咖啡",
-            "ラテ": "拿鐵",
-            "珈琲": "咖啡",
-            "コーヒー": "咖啡",
-            
-            // 超商常見與鮮食
+            "ドライりんご": "蘋果乾", "ドライみかん": "橘子乾", "ドライ": "果乾",
+            "ジャンボ焼きとり": "特大烤雞肉串", "ジャンボ焼鳥": "特大烤雞肉串",
+            "焼鳥ももタレ": "醬汁雞腿肉串", "焼きとり": "烤雞肉串", "焼鳥もも": "雞腿肉串",
+            "焼鳥": "烤雞肉串", "もも": "雞肉(雞腿)", "タレ": "醬汁", "塩": "鹽味", "ジャンボ": "特大",
+            "クラフトボスラテ": "CRAFT BOSS 拿鐵", "クラフトボス": "CRAFT BOSS 咖啡",
+            "ラテ": "拿鐵", "珈琲": "咖啡", "コーヒー": "咖啡",
             "おにぎり": "飯糰", "弁当": "便當", "サンドイッチ": "三明治", "パン": "麵包",
             "サラダ": "沙拉", "パスタ": "義大利麵", "うどん": "烏龍麵", "ラーメン": "拉麵",
             "お茶": "茶", "水": "水", "ミルク": "牛奶", "牛乳": "牛奶", "ヨーグルト": "優格",
             "炭酸水": "氣泡水", "ジュース": "果汁", "ビール": "啤酒", "酒": "酒",
-            "デザ體": "甜點", "プリン": "布丁", "アイス": "冰淇淋", "チョコレート": "巧克力",
-            
-            // 系統收據詞彙
+            "デザート": "甜點", "プリン": "布丁", "アイス": "冰淇淋", "チョコレート": "巧克力",
             "レジ袋": "購物塑膠袋", "袋": "袋子", "合計": "總計", "小計": "小計"
         };
 
-        // 精密翻譯核心邏輯
         function translateLine(lineText) {
-            // 1. 抽離結尾的金額與稅率標籤（例如 \150輕、￥258 等），只留純文字比對字典
             let pureJapanese = lineText.replace(/[\uffe5￥\\¥\d,]+(?:軽|軽税|点)?$/g, "").trim();
-            
-            if (pureJapanese.length < 2) return lineText;
+            if (pureJapanese.length < 2) return { translated: lineText, isTranslated: false };
 
-            // 2. 將關鍵字依長度從長到短排序，防止「ドライ」去攔截「ドライりんご」
             const sortedKeywords = Object.keys(translationDictionary).sort((a, b) => b.length - a.length);
 
-            // 3. 進行精準包含比對
             for (let keyword of sortedKeywords) {
                 if (pureJapanese.includes(keyword)) {
                     let chineseTranslation = translationDictionary[keyword];
-                    
-                    // 抓出原本行內夾帶的金額尾碼
                     let priceMatch = lineText.match(/[\uffe5￥\\¥\d,]+(?:軽|軽税|点)?$/g);
                     let priceStr = priceMatch ? ` ${priceMatch[0]}` : "";
-                    
-                    return `${chineseTranslation}${priceStr} 🌟(原文: ${pureJapanese})`;
+                    return { 
+                        translated: `${chineseTranslation}${priceStr} 🌟(原文: ${pureJapanese})`, 
+                        csvPure: `${chineseTranslation}${priceStr}`, // 專門給 CSV 用的乾淨翻譯文字
+                        isTranslated: true 
+                    };
                 }
             }
-            
-            return lineText; // 若完全沒對到字典，維持原狀輸出
+            return { translated: lineText, csvPure: lineText, isTranslated: false };
         }
 
-        fileInput.addEventListener('change', async function(e) {
-            const files = e.target.files;
+        // --- 拖曳功能修復邏輯 ---
+        dropZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', function() {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFiles(files);
+            }
+        });
+
+        fileInput.addEventListener('change', function(e) {
+            handleFiles(e.target.files);
+        });
+
+        // 處理核心流程
+        async function handleFiles(files) {
             if (files.length === 0) return;
 
             document.getElementById('empty-row')?.remove();
-            statusText.innerText = `已偵測到 ${files.length} 張收據，正在啟動辨識引擎...`;
+            statusText.innerText = `已讀取 ${files.length} 張收據，正在初始化辨識引擎...`;
             progressBar.style.width = '0%';
             exportBtn.disabled = true;
 
@@ -152,7 +150,7 @@
                 const file = files[i];
                 const currentNum = i + 1;
                 
-                statusText.innerText = `[${currentNum}/${files.length}] 正在讀取檔案：${file.name}...`;
+                statusText.innerText = `[${currentNum}/${files.length}] 正在辨識：${file.name}...`;
                 const imgUrl = URL.createObjectURL(file);
 
                 try {
@@ -175,93 +173,80 @@
                     progressBar.style.width = `${totalProgress}%`;
 
                 } catch (err) {
-                    console.error("辨識錯誤:", err);
+                    console.error(err);
                     appendErrorRow(file.name, imgUrl);
                 }
             }
 
             statusText.innerText = `🎉 全部 ${files.length} 張收據處理完畢！`;
             if(allReceiptsData.length > 0) exportBtn.disabled = false;
-        });
+        }
 
         function parseReceiptContent(fileName, text, imgUrl) {
-            // 切行並清理空白
             const lines = text.split('\n').map(line => line.trim().replace(/\s+/g, '')).filter(line => line !== '');
             let location = "未知商店";
             const lowerText = text.toLowerCase();
             
-            // 1. 商店名稱優化判定
-            if (/familymart|ファミリーマート/i.test(lowerText)) {
-                location = "FamilyMart (全家)";
-            } else if (/lawson|ローソン/i.test(lowerText)) {
-                location = "Lawson (羅森)";
-            } else if (/7-eleven|セブン|711/i.test(lowerText)) {
-                location = "7-Eleven";
-            } else if (/donki|donquijote|ドン・キホーテ/i.test(lowerText)) {
-                location = "Donki 唐吉訶德";
-            } else if (/æon|aeon|イオン/i.test(lowerText)) {
-                location = "AEON 超市";
-            } else if (lines.length > 0) {
+            if (/familymart|ファミリーマート/i.test(lowerText)) location = "FamilyMart (全家)";
+            else if (/lawson|ローソン/i.test(lowerText)) location = "Lawson (羅森)";
+            else if (/7-eleven|セブン|711/i.test(lowerText)) location = "7-Eleven";
+            else if (/donki|donquijote|ドン・キホーテ/i.test(lowerText)) location = "Donki 唐吉訶德";
+            else if (/æon|aeon|イオン/i.test(lowerText)) location = "AEON 超市";
+            else if (lines.length > 0) {
                 let firstLineClean = lines[0].replace(/[。．\.、，,\[\]\(\)]/g, "");
                 if (firstLineClean.length > 2) location = firstLineClean;
             }
 
-            // 2. 日期精準判定 (阻絕電話號碼)
             let date = "未偵測到";
             const jpDateMatch = text.match(/(\d{4}年\d{1,2}月\d{1,2}日)/);
-            if (jpDateMatch) {
-                date = jpDateMatch[0];
-            } else {
+            if (jpDateMatch) date = jpDateMatch[0];
+            else {
                 const slashDateMatch = text.match(/\b(\d{2,4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2})\b/);
                 if (slashDateMatch) date = slashDateMatch[0];
             }
 
-            // 3. 時間精準判定
             let time = "未偵測到";
             const timeMatch = text.match(/(?<!\d)(\d{1,2}:\d{2})(?!\d)/);
             if (timeMatch) time = timeMatch[0];
 
-            // 4. 支付方式
             let payment = "現金 (預設)";
             if (/クレジット|credit|カード/i.test(lowerText)) payment = "信用卡";
             else if (/交通系|suica|pasmo|ic/i.test(lowerText)) payment = "電子票證 (Suica/PASMO)";
             else if (/paypay|ペイペイ/i.test(lowerText)) payment = "行動支付 (PayPay)";
 
-            // 5. 品項過濾與精準查表翻譯
-            let itemsArray = [];
-            let totalAmount = "";
+            let htmlItems = [];
+            let csvItems = [];
 
             lines.forEach(line => {
-                // 排除雜訊行
                 if (line.includes("電話") || line.includes("番号") || line.includes("登録") || line.includes("年") || line.includes("月") || line.includes("日")) return;
                 if (/^[\d\-\:\s]+$/.test(line)) return;
 
                 const hasPrice = /[\uffe5￥¥\d,]+\s*(?:軽|軽税|点)?$/.test(line) || line.includes("￥") || line.includes("¥");
                 
                 if (line.includes("合計") || line.includes("お買上金額") || line.includes("小計")) {
-                    totalAmount = line;
-                } else if (hasPrice && !line.includes("課税") && !line.includes("預り") && !line.includes("釣") && itemsArray.length < 15) {
+                    let transObj = translateLine(line);
+                    htmlItems.push(`📋 【${transObj.translated}】`);
+                    csvItems.push(`【${transObj.csvPure}】`);
+                } else if (hasPrice && !line.includes("課税") && !line.includes("預り") && !line.includes("釣") && htmlItems.length < 20) {
                     let cleanLine = line.replace(/^[@◎\s\•\+\*]+/, "");
-                    // 翻譯品項
-                    let translatedLine = translateLine(cleanLine);
-                    itemsArray.push(translatedLine);
+                    let transObj = translateLine(cleanLine);
+                    htmlItems.push(transObj.translated);
+                    csvItems.push(transObj.csvPure);
                 }
             });
 
-            if (itemsArray.length === 0 && totalAmount) {
-                itemsArray.push(translateLine(totalAmount));
-            } else if (totalAmount) {
-                itemsArray.push(`📋 【${translateLine(totalAmount)}】`);
+            if (htmlItems.length === 0) {
+                htmlItems.push("未辨識出品項，請手動確認");
+                csvItems.push("未辨識出品項");
             }
 
-            return { fileName, location, date, time, payment, items: itemsArray, imgUrl };
+            return { fileName, location, date, time, payment, htmlItems, csvItems, imgUrl };
         }
 
         function appendRowToTable(data) {
             const row = document.createElement('tr');
             let itemsHtml = '<ul class="item-list">';
-            data.items.forEach(item => { 
-                // 將繁中提示文字渲染上色
+            data.htmlItems.forEach(item => { 
                 let htmlItem = item.replace("🌟(原文:", " 🌟<span class='translated-text' style='color:#28a745; font-weight:bold;'>").replace(")", "</span>");
                 itemsHtml += `<li>${htmlItem}</li>`; 
             });
@@ -281,22 +266,22 @@
 
         function appendErrorRow(fileName, imgUrl) {
             const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><img src="${imgUrl}" class="receipt-img"></td>
-                <td>${fileName}</td>
-                <td colspan="5" style="color:red; text-align:center;">⚠️ 辨識嚴重失敗或格式毀損</td>
-            `;
+            row.innerHTML = `<td><img src="${imgUrl}" class="receipt-img"></td><td>${fileName}</td><td colspan="5" style="color:red; text-align:center;">⚠️ 辨識嚴重失敗</td>`;
             tableBody.appendChild(row);
         }
 
+        // --- 核心改進：CSV 匯出拆行邏輯 ---
         function exportToCSV() {
             let csvContent = "\uFEFF"; 
-            csvContent += "檔案名稱,地點(商店名稱),消費日期,消費時間,支付方式,購買品項與金額明細\n";
+            // 標頭定義
+            csvContent += "檔案名稱,地點(商店名稱),消費日期,消費時間,支付方式,單一品項與金額明細\n";
 
-            allReceiptsData.forEach(function(row) {
-                let itemsJoined = row.items.join(" | ");
-                let rowStr = `"${row.fileName}","${row.location}","${row.date}","${row.time}","${row.payment}","${itemsJoined}"`;
-                csvContent += rowStr + "\n";
+            allReceiptsData.forEach(function(receipt) {
+                // 關鍵：將每張收據的每個品項遍歷，獨立輸出成 CSV 的一行！
+                receipt.csvItems.forEach(function(item) {
+                    let rowStr = `"${receipt.fileName}","${receipt.location}","${receipt.date}","${receipt.time}","${receipt.payment}","${item}"`;
+                    csvContent += rowStr + "\n";
+                });
             });
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -305,7 +290,7 @@
             link.setAttribute("href", url);
             
             const today = new Date().toISOString().slice(0, 10);
-            link.setAttribute("download", `日本旅遊收據統計(完美翻譯版)_${today}.csv`);
+            link.setAttribute("download", `日本旅遊拆行記帳表_${today}.csv`);
             link.style.visibility = 'hidden';
             
             document.body.appendChild(link);
