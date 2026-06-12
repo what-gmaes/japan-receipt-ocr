@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日本收據智慧辨識系統 (防塞車 AI 排隊版)</title>
+    <title>日本收據智慧辨識系統 (免/付費雙模版)</title>
     <style>
         body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 1200px; margin: 20px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
         h2 { color: #1a1a1a; text-align: center; }
-        .config-area { background-color: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #28a745; }
-        .config-area input { width: 60%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        .config-area { background-color: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #007bff; }
+        .config-area input { width: 45%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; margin-right: 15px; }
+        .mode-select { padding: 9px; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; border: 1px solid #ccc; background-color: #fff; }
         .upload-area { border: 3px dashed #0056b3; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; background-color: #fff; border-radius: 10px; font-size: 18px; font-weight: bold; transition: 0.3s; }
         .upload-area.dragover { background-color: #e9f2ff; border-color: #28a745; }
         .btn-container { margin: 20px 0; text-align: right; }
@@ -24,26 +25,35 @@
         .progress-bar { height: 100%; background-color: #28a745; width: 0%; transition: width 0.3s; }
         .item-list { margin: 0; padding-left: 18px; font-size: 13px; color: #555; }
         .receipt-img { max-width: 80px; max-height: 120px; border-radius: 4px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .warning-tip { font-size: 12px; color: #d9534f; font-weight: bold; margin-top: 5px; }
+        .tip-area { font-size: 12px; font-weight: bold; margin-top: 8px; transition: 0.2s; }
+        .free-tip { color: #e65100; }
+        .paid-tip { color: #2e7d32; }
     </style>
 </head>
 <body>
 
-    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統 (防塞車 AI 版)</h2>
+    <h2>🇯🇵 日本旅遊收據智慧辨識系統 (免/付費雙模自由切換版)</h2>
     
     <div class="config-area">
-        <label for="api-key">🔑 <b>請輸入你的 Gemini API Key：</b></label>
+        <label function="api-key">🔑 <b>API Key：</b></label>
         <input type="password" id="api-key" placeholder="貼上您的 AI Studio 金鑰 (AIzaSy...)">
-        <div class="warning-tip">🔒 提示：此網頁已強制鎖定最新免費通道，且已內建智慧排隊調速器，批量上傳絕不塞車、免支付任何費用。</div>
+        
+        <label>⚙️ <b>運作模式：</b></label>
+        <select id="mode-select" class="mode-select" onchange="updateModeUI()">
+            <option value="free">🆓 完全免費模式 (自動排隊防塞車)</option>
+            <option value="paid">⚡ 全速付費模式 (Tier 1 信用卡全速併發)</option>
+        </select>
+        
+        <div id="tip-text" class="tip-area free-tip">隨時切換模式！目前為免費通道：每張收據間隔 4.5 秒自動排隊，完全不花一毛錢。</div>
     </div>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        📸 點擊此處或直接「拖曳多張收據照片」至此處上傳 (內建智慧排隊)
+        📸 <span id="upload-hint">點擊此處或直接「拖曳多張收據照片」至此處上傳</span>
         <input type="file" id="file-input" accept="image/*" multiple style="display:none">
     </div>
 
     <div id="status-container">
-        <div id="status-text">請先在上方輸入 API Key，然後上傳或拖曳收據照片以開啟免費 AI 大腦對帳...</div>
+        <div id="status-text">請先在上方輸入 API Key，調整好模式後上傳或拖曳收據照片...</div>
         <div class="progress-bar-container">
             <div class="progress-bar" id="progress-bar"></div>
         </div>
@@ -80,11 +90,33 @@
         const tableBody = document.getElementById('result-table-body');
         const exportBtn = document.getElementById('export-btn');
         const apiKeyInput = document.getElementById('api-key');
+        const modeSelect = document.getElementById('mode-select');
+        const tipText = document.getElementById('tip-text');
+        const uploadHint = document.getElementById('upload-hint');
         
         let allReceiptsData = [];
+        let completedCount = 0;
+        let totalFilesCount = 0;
 
-        if (localStorage.getItem('gemini_free_key')) {
-            apiKeyInput.value = localStorage.getItem('gemini_free_key');
+        if (localStorage.getItem('gemini_receipt_key')) {
+            apiKeyInput.value = localStorage.getItem('gemini_receipt_key');
+        }
+        if (localStorage.getItem('gemini_receipt_mode')) {
+            modeSelect.value = localStorage.getItem('gemini_receipt_mode');
+            updateModeUI();
+        }
+
+        function updateModeUI() {
+            localStorage.setItem('gemini_receipt_mode', modeSelect.value);
+            if (modeSelect.value === 'free') {
+                tipText.className = "tip-area free-tip";
+                tipText.innerText = "隨時切換模式！目前為免費通道：每張收據間隔 4.5 秒自動排隊，完全不花一毛錢。";
+                uploadHint.innerText = "點擊此處或直接「拖曳多張收據照片」至此處上傳 (免費排隊模式)";
+            } else {
+                tipText.className = "tip-area paid-tip";
+                tipText.innerText = "🚀 狀態：付費版參數已啟用。已移除所有排隊等待限制，將使用您的 Tier 1 信用卡額度進行全速平行辨識。";
+                uploadHint.innerText = "點擊此處或直接「拖曳多張收據照片」至此處上傳 (付費全速模式)";
+            }
         }
 
         dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -96,63 +128,74 @@
         });
         fileInput.addEventListener('change', function(e) { handleFiles(e.target.files); });
 
-        // 💡 延時輔助函式：讓程式休息指定的毫秒數，避開 Google 的頻率限制
-        const delay = ms => new Promise(res => setTimeout(res, ms));
-
         async function handleFiles(files) {
             const apiKey = apiKeyInput.value.trim();
+            const currentMode = modeSelect.value;
             if (!apiKey) {
                 alert("❌ 請先輸入有效的 Gemini API Key 才能使用 AI 辨識功能！");
                 return;
             }
-            localStorage.setItem('gemini_free_key', apiKey);
+            localStorage.setItem('gemini_receipt_key', apiKey);
 
             if (files.length === 0) return;
             document.getElementById('empty-row')?.remove();
-            statusText.innerText = `已讀取 ${files.length} 張收據，正在啟動智慧調速排隊機制...`;
+            
+            completedCount = 0;
+            totalFilesCount = files.length;
             progressBar.style.width = '0%';
             exportBtn.disabled = true;
 
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                const currentNum = i + 1;
-                statusText.innerText = `[${currentNum}/${files.length}] AI 正在全視覺掃描、校對並進行繁中翻譯：${file.name}...`;
-                const imgUrl = URL.createObjectURL(file);
+            const fileArray = Array.from(files);
 
-                try {
-                    const base64Data = await fileToBase64(file);
+            if (currentMode === 'paid') {
+                // ⚡ 付費版黑科技：Promise.all 全速全開平行併發處理
+                statusText.innerText = `已讀取 ${totalFilesCount} 張收據，已開啟付費平行處理通道，全速啟動中...`;
+                const promises = fileArray.map((file) => processSingleFile(file, apiKey, false));
+                await Promise.all(promises);
+            } else {
+                // 🆓 免費版穩健流：for 迴圈一張一張慢慢跑，並且每張間隔 4.5 秒，絕不踩爆官方頻率
+                statusText.innerText = `已讀取 ${totalFilesCount} 張收據，正在用免費防塞車模式循序辨識...`;
+                for (let i = 0; i < fileArray.length; i++) {
+                    await processSingleFile(fileArray[i], apiKey, true);
                     
-                    const aiResponse = await callGeminiFreeVisionAPI(apiKey, base64Data);
-                    const parsedData = JSON.parse(aiResponse);
-                    
-                    parsedData.fileName = file.name;
-                    parsedData.imgUrl = imgUrl;
-
-                    allReceiptsData.push(parsedData);
-                    appendRowToTable(parsedData);
-
-                    let totalProgress = Math.round((currentNum / files.length) * 100);
-                    progressBar.style.width = `${totalProgress}%`;
-
-                    // 💡 核心安全排隊鎖：如果是最後一張就不用等，否則每辨識完一張，強制網頁休息 4.5 秒，完美避開免費額度的每分鐘限制
-                    if (currentNum < files.length) {
-                        statusText.innerText = `[${currentNum}/${files.length}] ✨ 辨識成功！智慧防塞車排隊中，4.5秒後處理下一張...`;
-                        await delay(4500); 
-                    }
-
-                } catch (err) {
-                    console.error("AI 辨識發生錯誤:", err);
-                    appendErrorRow(file.name, imgUrl, err.message);
-                    
-                    // 如果被封鎖了，多休息幾秒再試
-                    if (err.message.includes("quota") || err.message.includes("429")) {
-                        statusText.innerText = `⚠️ 偵測到流量過快，防塞車安全機制啟動，強制冷卻 10 秒後自動重試...`;
-                        await delay(10000);
+                    // 如果不是最後一張，而且使用的是免費模式，就強制等待 4.5 秒
+                    if (i < fileArray.length - 1) {
+                        for (let countdown = 45; countdown > 0; countdown--) {
+                            statusText.innerText = `⏱️ 免費模式安全防護中：已完成 [${completedCount}/${totalFilesCount}]，智慧排隊中，於 ${(countdown/10).toFixed(1)} 秒後辨識下一張...`;
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        }
                     }
                 }
             }
-            statusText.innerText = `🎉 成功！所有收據已由 AI 完美識別與翻譯完畢（安全調速模式）。`;
+
+            statusText.innerText = `🎉 恭喜！全部 ${totalFilesCount} 張收據已全數辨識並翻譯完畢！`;
             if(allReceiptsData.length > 0) exportBtn.disabled = false;
+        }
+
+        async function processSingleFile(file, apiKey, isFreeMode) {
+            const imgUrl = URL.createObjectURL(file);
+            try {
+                const base64Data = await fileToBase64(file);
+                // 依據模式選擇底層要呼叫的模型通道
+                const aiResponse = await callGeminiVisionAPI(apiKey, base64Data, isFreeMode);
+                const parsedData = JSON.parse(aiResponse);
+                
+                parsedData.fileName = file.name;
+                parsedData.imgUrl = imgUrl;
+
+                allReceiptsData.push(parsedData);
+                appendRowToTable(parsedData);
+            } catch (err) {
+                console.error("AI 辨識發生錯誤:", err);
+                appendErrorRow(file.name, imgUrl, err.message);
+            } finally {
+                completedCount++;
+                let totalProgress = Math.round((completedCount / totalFilesCount) * 100);
+                progressBar.style.width = `${totalProgress}%`;
+                if (!isFreeMode) {
+                    statusText.innerText = `⚡ 全速併發處理中：已完成 ${completedCount} / ${totalFilesCount} 張收據...`;
+                }
+            }
         }
 
         function fileToBase64(file) {
@@ -164,11 +207,13 @@
             });
         }
 
-        async function callGeminiFreeVisionAPI(apiKey, base64Image) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        async function callGeminiVisionAPI(apiKey, base64Image, isFreeMode) {
+            // 💡 如果是免費模式就強制切入有免費額度的舊通道，付費模式則引入新版本
+            const modelName = isFreeMode ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
             
             const prompt = `你現在是專業的日本發票與收據智慧記帳系統。
-請仔細閱讀這張收據圖片，忽略所有的收銀員編號、明細序號、稅率行(如 8%、10%、稅拔、內消費稅)等任何非消費商品名稱的雜訊。
+請仔細閱讀這張收據圖片，忽略所有的收銀員編號、明細序號、稅率行(如 8%, 10%, 稅拔, 內消費稅, 免稅)等任何非消費商品名稱的雜訊。
 請直接擷取核心數據，並以嚴格的 JSON 格式回傳。
 
 要求的 JSON 欄位結構如下（品項與價格必須完全分開欄位）：
@@ -238,7 +283,7 @@
                 <td>${fileName}</td>
                 <td colspan="5" style="color:red; font-size:13px; font-weight:bold; padding: 20px;">
                     ⚠️ AI 解析失敗！<br>
-                    <span style="color:#555; font-weight:normal;">錯誤回報原因：${errorMsg}</span>
+                    <span style="color:#555; font-weight:normal;">原因：${errorMsg}</span>
                 </td>
             `;
             tableBody.appendChild(row);
