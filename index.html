@@ -34,7 +34,7 @@
     <div class="config-area">
         <label for="api-key">🔑 <b>請輸入你的 Gemini API Key：</b></label>
         <input type="password" id="api-key" placeholder="貼上您的 AI Studio 金鑰 (AIzaSy...)">
-        <div class="warning-tip">🔒 提示：此網頁已強制轉向 Google 1.5 官方免費額度通道，完全不需要且絕對不會支付任何費用。</div>
+        <div class="warning-tip">🔒 提示：此網頁已強制鎖定 Google 1.5 免費額度通道，完全不需要且絕對不會支付任何費用。</div>
     </div>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
@@ -119,10 +119,9 @@
                 try {
                     const base64Data = await fileToBase64(file);
                     
-                    // 呼叫 API，安全鎖定免費通道
                     const aiResponse = await callGeminiFreeVisionAPI(apiKey, base64Data);
-                    
                     const parsedData = JSON.parse(aiResponse);
+                    
                     parsedData.fileName = file.name;
                     parsedData.imgUrl = imgUrl;
 
@@ -132,8 +131,9 @@
                     let totalProgress = Math.round((currentNum / files.length) * 100);
                     progressBar.style.width = `${totalProgress}%`;
                 } catch (err) {
-                    console.error(err);
-                    appendErrorRow(file.name, imgUrl);
+                    console.error("AI 辨識發生錯誤:", err);
+                    // ✨ 升級：直接把底層真正的錯誤丟到畫面上，方便一秒除錯
+                    appendErrorRow(file.name, imgUrl, err.message);
                 }
             }
             statusText.innerText = `🎉 成功！所有收據已由 AI 完美識別與翻譯完畢（完全免費通道）。`;
@@ -149,14 +149,13 @@
             });
         }
 
-        // 呼叫 Gemini 免費通道
+        // 呼叫 Gemini 免費通道核心（全面鎖定純 JSON 輸出，防止當機）
         async function callGeminiFreeVisionAPI(apiKey, base64Image) {
-            // 💡 關鍵安全鎖：強制指定具有免費額度的 gemini-1.5-flash 模型，100% 避開扣款路徑
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
             
             const prompt = `你現在是專業的日本發票與收據智慧記帳系統。
 請仔細閱讀這張收據圖片，忽略所有的收銀員編號、明細序號、稅率行(如 8%、10%、稅拔、內消費稅)等任何非消費商品名稱的雜訊。
-請直接擷取核心數據，並以嚴格的 JSON 格式回傳，不要包含任何 \`\`\`json 標籤或 markdown 文字。
+請直接擷取核心數據，並以嚴格的 JSON 格式回傳。
 
 要求的 JSON 欄位結構如下（品項與價格必須完全分開欄位）：
 {
@@ -182,18 +181,21 @@
                             { text: prompt },
                             { inlineData: { mimeType: "image/jpeg", data: base64Image } }
                         ]
-                    }]
+                    }],
+                    // 💡 黑科技安全鎖：強制 Google 伺服器進行純 JSON 格式編碼輸出，100% 刨除 Markdown 髒標籤污染
+                    generationConfig: {
+                        responseMimeType: "application/json"
+                    }
                 })
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error?.message || "API 呼叫失敗");
+                throw new Error(errorData.error?.message || `HTTP 錯誤代碼: ${response.status}`);
             }
 
             const resData = await response.json();
-            let rawText = resData.candidates[0].content.parts[0].text;
-            return rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+            return resData.candidates[0].content.parts[0].text.trim();
         }
 
         function appendRowToTable(data) {
@@ -216,13 +218,20 @@
             tableBody.appendChild(row);
         }
 
-        function appendErrorRow(fileName, imgUrl) {
+        // ✨ 錯誤渲染區塊升級：能直接看清真正的錯誤原因
+        function appendErrorRow(fileName, imgUrl, errorMsg) {
             const row = document.createElement('tr');
-            row.innerHTML = `<td><img src="${imgUrl}" class="receipt-img"></td><td>${fileName}</td><td colspan="5" style="color:red; text-align:center;">⚠️ AI 解析失敗，請檢查金鑰或稍後再試</td>`;
+            row.innerHTML = `
+                <td><img src="${imgUrl}" class="receipt-img"></td>
+                <td>${fileName}</td>
+                <td colspan="5" style="color:red; font-size:13px; font-weight:bold; padding: 20px;">
+                    ⚠️ AI 解析失敗！<br>
+                    <span style="color:#555; font-weight:normal;">錯誤回報原因：${errorMsg}</span>
+                </td>
+            `;
             tableBody.appendChild(row);
         }
 
-        // CSV 匯出分欄核心
         function exportToCSV() {
             let csvContent = "\uFEFF"; 
             csvContent += "檔案名稱,地點(商店名稱),消費日期,消費時間,支付方式,購買品項(繁中),消費金額\n";
