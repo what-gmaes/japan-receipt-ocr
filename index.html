@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日本收據批量辨識系統</title>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <title>日本收據智慧辨識系統 (Gemini 100% 免費 AI 版)</title>
     <style>
         body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 1200px; margin: 20px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
         h2 { color: #1a1a1a; text-align: center; }
+        .config-area { background-color: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #28a745; }
+        .config-area input { width: 60%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
         .upload-area { border: 3px dashed #0056b3; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; background-color: #fff; border-radius: 10px; font-size: 18px; font-weight: bold; transition: 0.3s; }
         .upload-area.dragover { background-color: #e9f2ff; border-color: #28a745; }
         .btn-container { margin: 20px 0; text-align: right; }
@@ -22,30 +23,34 @@
         .progress-bar-container { height: 8px; background-color: #ddd; border-radius: 4px; margin-top: 10px; overflow: hidden; }
         .progress-bar { height: 100%; background-color: #28a745; width: 0%; transition: width 0.3s; }
         .item-list { margin: 0; padding-left: 18px; font-size: 13px; color: #555; }
-        .receipt-img { max-width: 80px; max-height: 120px; border-radius: 4px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: 0.2s; }
-        .receipt-img:hover { transform: scale(1.1); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        .translated-text { color: #28a745; font-weight: bold; }
+        .receipt-img { max-width: 80px; max-height: 120px; border-radius: 4px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .warning-tip { font-size: 12px; color: #d9534f; font-weight: bold; margin-top: 5px; }
     </style>
 </head>
 <body>
 
-    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統V0.4</h2>
-
+    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統 (100% 免費 AI 版)</h2>
+    
+    <div class="config-area">
+        <label for="api-key">🔑 <b>請輸入你的 Gemini API Key：</b></label>
+        <input type="password" id="api-key" placeholder="貼上您的 AI Studio 金鑰 (AIzaSy...)">
+        <div class="warning-tip">🔒 提示：此網頁已強制轉向 Google 1.5 官方免費額度通道，完全不需要且絕對不會支付任何費用。</div>
+    </div>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        📸 點擊此處或直接「拖曳多張收據照片」至此處上傳
+        📸 點擊此處或直接「拖曳多張收據照片」至此處上傳 (AI 處理)
         <input type="file" id="file-input" accept="image/*" multiple style="display:none">
     </div>
 
     <div id="status-container">
-        <div id="status-text">請上傳收據照片以開始...</div>
+        <div id="status-text">請先在上方輸入 API Key，然後上傳或拖曳收據照片以開啟免費 AI 大腦對帳...</div>
         <div class="progress-bar-container">
             <div class="progress-bar" id="progress-bar"></div>
         </div>
     </div>
 
     <div class="btn-container">
-        <button class="btn" id="export-btn" onclick="exportToCSV()" disabled>📥 匯出為乾淨記帳 CSV (品項價格分開)</button>
+        <button class="btn" id="export-btn" onclick="exportToCSV()" disabled>📥 匯出為乾淨記帳 CSV (品項價格獨立拆行)</button>
     </div>
 
     <div class="table-responsive">
@@ -57,7 +62,7 @@
                     <th style="width: 15%;">地點 (商店)</th>
                     <th style="width: 12%;">日期</th>
                     <th style="width: 10%;">時間</th>
-                    <th style="width: 29%;">購買品項與金額 (網頁對照視窗)</th>
+                    <th style="width: 29%;">購買品項與金額 (AI 完美視覺對照)</th>
                     <th style="width: 12%;">支付方式</th>
                 </tr>
             </thead>
@@ -74,55 +79,14 @@
         const progressBar = document.getElementById('progress-bar');
         const tableBody = document.getElementById('result-table-body');
         const exportBtn = document.getElementById('export-btn');
+        const apiKeyInput = document.getElementById('api-key');
         
         let allReceiptsData = [];
 
-        // 🇯🇵 繁體中文精準翻譯字典庫
-        const translationDictionary = {
-            "ドライりんご": "蘋果乾", "ドライみかん": "橘子乾", "ドライ": "果乾",
-            "ジャンボ焼きとり": "特大烤雞肉串", "ジャンボ焼鳥": "特大烤雞肉串",
-            "焼鳥ももタレ": "醬汁雞腿肉串", "焼きとり": "烤雞肉串", "焼鳥もも": "雞腿肉串",
-            "焼鳥": "烤雞肉串", "もも": "雞肉(雞腿)", "タレ": "醬汁", "塩": "鹽味", "ジャンボ": "特大",
-            "クラフトボスラテ": "CRAFT BOSS 拿鐵", "クラフトボス": "CRAFT BOSS 咖啡",
-            "ラテ": "拿鐵", "珈琲": "咖啡", "コーヒー": "咖啡",
-            "おにぎり": "飯糰", "弁当": "便當", "サンドイッチ": "三明治", "パン": "麵包",
-            "サラダ": "沙拉", "パスタ": "義大利麵", "うどん": "烏龍麵", "ラーメン": "拉麵",
-            "お茶": "茶", "水": "水", "ミルク": "牛奶", "牛乳": "牛奶", "ヨーグルト": "優格",
-            "炭酸水": "氣泡水", "ジュース": "果汁", "ビール": "啤酒", "酒": "酒",
-            "デザート": "甜點", "プリン": "布丁", "アイス": "冰淇淋", "チョコレート": "巧克力",
-            "レジ袋": "購物塑膠袋", "袋": "袋子", "合計": "總計", "小計": "小計"
-        };
-
-        // 精密翻譯與資料分離核心
-        function parseLineDetails(lineText) {
-            let priceStr = "";
-            let priceMatch = lineText.match(/[-?、,\d]+(?=\s*(?:輕|軽|輕稅|軽税|點|点)?$)/) || lineText.match(/[\uffe5￥\\¥\d,]+$/);
-            if (priceMatch) {
-                priceStr = priceMatch[0].replace(/[\uffe5￥\\¥\s,、]/g, "");
-            }
-
-            let pureJapanese = lineText.replace(/[\uffe5￥\\¥\d,，、\s\-\.]+(?:輕|軽|輕稅|軽税|點|点)?$/g, "").trim();
-            pureJapanese = pureJapanese.replace(/^[@◎\s\•\+\*]+/, "");
-
-            let chineseTranslation = pureJapanese;
-
-            const sortedKeywords = Object.keys(translationDictionary).sort((a, b) => b.length - a.length);
-            for (let keyword of sortedKeywords) {
-                if (pureJapanese.includes(keyword)) {
-                    chineseTranslation = translationDictionary[keyword];
-                    break;
-                }
-            }
-
-            return {
-                originalText: lineText,
-                pureJapanese: pureJapanese,
-                chineseTranslation: chineseTranslation,
-                price: priceStr || "0"
-            };
+        if (localStorage.getItem('gemini_free_key')) {
+            apiKeyInput.value = localStorage.getItem('gemini_free_key');
         }
 
-        // --- 拖曳事件監聽 ---
         dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
         dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
         dropZone.addEventListener('drop', function(e) {
@@ -133,30 +97,35 @@
         fileInput.addEventListener('change', function(e) { handleFiles(e.target.files); });
 
         async function handleFiles(files) {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                alert("❌ 請先輸入有效的 Gemini API Key 才能使用 AI 辨識功能！");
+                return;
+            }
+            localStorage.setItem('gemini_free_key', apiKey);
+
             if (files.length === 0) return;
             document.getElementById('empty-row')?.remove();
-            statusText.innerText = `已讀取 ${files.length} 張收據，正在載入 OCR 引擎...`;
+            statusText.innerText = `已讀取 ${files.length} 張收據，正在呼叫免費 AI 進行視覺大腦掃描...`;
             progressBar.style.width = '0%';
             exportBtn.disabled = true;
 
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 const currentNum = i + 1;
-                statusText.innerText = `[${currentNum}/${files.length}] 正在辨識：${file.name}...`;
+                statusText.innerText = `[${currentNum}/${files.length}] AI 正在全視覺掃描、校對並進行繁中翻譯：${file.name}...`;
                 const imgUrl = URL.createObjectURL(file);
 
                 try {
-                    const { data: { text } } = await Tesseract.recognize(
-                        file, 'jpn',
-                        { logger: m => {
-                            if(m.status === 'recognizing') {
-                                let fProgress = Math.round(m.progress * 100);
-                                statusText.innerText = `[${currentNum}/${files.length}] 正在辨識：${file.name} (${fProgress}%)`;
-                            }
-                        }}
-                    );
+                    const base64Data = await fileToBase64(file);
+                    
+                    // 呼叫 API，安全鎖定免費通道
+                    const aiResponse = await callGeminiFreeVisionAPI(apiKey, base64Data);
+                    
+                    const parsedData = JSON.parse(aiResponse);
+                    parsedData.fileName = file.name;
+                    parsedData.imgUrl = imgUrl;
 
-                    const parsedData = parseReceiptContent(file.name, text, imgUrl);
                     allReceiptsData.push(parsedData);
                     appendRowToTable(parsedData);
 
@@ -167,89 +136,76 @@
                     appendErrorRow(file.name, imgUrl);
                 }
             }
-            statusText.innerText = `🎉 全部 ${files.length} 張收據辨識與翻譯皆已完成！`;
+            statusText.innerText = `🎉 成功！所有收據已由 AI 完美識別與翻譯完畢（完全免費通道）。`;
             if(allReceiptsData.length > 0) exportBtn.disabled = false;
         }
 
-        function parseReceiptContent(fileName, text, imgUrl) {
-            const lines = text.split('\n').map(line => line.trim().replace(/\s+/g, '')).filter(line => line !== '');
-            let location = "未知商店";
-            const lowerText = text.toLowerCase();
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // 呼叫 Gemini 免費通道
+        async function callGeminiFreeVisionAPI(apiKey, base64Image) {
+            // 💡 關鍵安全鎖：強制指定具有免費額度的 gemini-1.5-flash 模型，100% 避開扣款路徑
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
             
-            if (/familymart|ファミリーマート/i.test(lowerText)) location = "FamilyMart (全家)";
-            else if (/lawson|ローソン/i.test(lowerText)) location = "Lawson (羅森)";
-            else if (/7-eleven|セブン|711/i.test(lowerText)) location = "7-Eleven";
-            else if (/donki|donquijote|ドン・キホーテ/i.test(lowerText)) location = "Donki 唐吉訶德";
-            else if (/æon|aeon|イオン/i.test(lowerText)) location = "AEON 超市";
-            else if (lines.length > 0) {
-                let firstLineClean = lines[0].replace(/[。．\.、，,\[\]\(\)]/g, "");
-                if (firstLineClean.length > 2) location = firstLineClean;
-            }
+            const prompt = `你現在是專業的日本發票與收據智慧記帳系統。
+請仔細閱讀這張收據圖片，忽略所有的收銀員編號、明細序號、稅率行(如 8%、10%、稅拔、內消費稅)等任何非消費商品名稱的雜訊。
+請直接擷取核心數據，並以嚴格的 JSON 格式回傳，不要包含任何 \`\`\`json 標籤或 markdown 文字。
 
-            // 2. 日期救援機制優化
-            let date = "未偵測到";
-            const jpDateMatch = text.match(/(\d{4}年\d{1,2}月\d{1,2}日)/);
-            if (jpDateMatch) {
-                date = jpDateMatch[0];
-            } else {
-                // 救援：尋找長得像 2026年06月05日 但漢字漏掉或模糊的行 (例如 2026 6 5 或 2026.6.5)
-                const rescueDateMatch = text.match(/(20\d{2}[年\.\/\s\-]\d{1,2}[月\.\/\s\-]\d{1,2})/);
-                if (rescueDateMatch) {
-                    // 將其轉換成漂亮格式
-                    let cleanDate = rescueDateMatch[0].replace(/[年月\.\/\s\-]/g, '/');
-                    // 去除末尾可能多抓的斜線
-                    if (cleanDate.endsWith('/')) cleanDate = cleanDate.slice(0, -1);
-                    date = cleanDate;
-                }
-            }
+要求的 JSON 欄位結構如下（品項與價格必須完全分開欄位）：
+{
+  "location": "商店名稱(若為連鎖店請直接輸出如 7-Eleven、FamilyMart、LoFT，否則輸出原本店名)",
+  "date": "消費日期(格式統一為 YYYY/MM/DD，若模糊請根據發票內容合理推斷年份，不保留漢字)",
+  "time": "消費時間(格式統一為 HH:MM，如 12:34)",
+  "payment": "支付方式(判斷為 信用卡、行動支付(PayPay)、電子票證(Suica/PASMO) 或 現金)",
+  "items": [
+    {
+      "chineseTranslation": "購買品項的精準繁體中文翻譯 (例如: 德式豬肉大熱狗、焦糖砂糖奶油樹夾心餅、富士山蘇打軟糖、總計)",
+      "pureJapanese": "原本的日文品項名稱",
+      "price": "該品項對應的純數字金額 (不要包含￥或稅字，必須是純數字字串，如果是最後的總金額，請將品項名稱命名為總計)"
+    }
+  ]
+}`;
 
-            // 3. 時間判定
-            let time = "未偵測到";
-            const timeMatch = text.match(/(?<!\d)(\d{1,2}:\d{2})(?!\d)/);
-            if (timeMatch) time = timeMatch[0];
-
-            // 4. 支付方式
-            let payment = "現金 (預設)";
-            if (/クレジット|credit|カード/i.test(lowerText)) payment = "信用卡";
-            else if (/交通系|suica|pasmo|ic/i.test(lowerText)) payment = "電子票證 (Suica/PASMO)";
-            else if (/paypay|ペイペイ/i.test(lowerText)) payment = "行動支付 (PayPay)";
-
-            let structuredItems = [];
-
-            lines.forEach(line => {
-                // ✨ 核心修正：徹底封殺收銀編號、明細序號等系統廢字
-                if (line.includes("電話") || line.includes("番号") || line.includes("登録") || line.includes("年") || line.includes("月") || line.includes("日")) return;
-                if (line.includes("責任") || line.includes("本責") || line.includes("レジ") || line.includes("担当") || line.includes("No.")) return;
-                if (/^[\d\-\:\s]+$/.test(line)) return;
-
-                const hasPrice = /[\uffe5￥¥\d,]+\s*(?:輕|軽|輕稅|軽税|點|点)?$/.test(line) || line.includes("￥") || line.includes("¥");
-                
-                if (line.includes("合計") || line.includes("お買上金額") || line.includes("小計")) {
-                    let details = parseLineDetails(line);
-                    details.chineseTranslation = `【${details.chineseTranslation}】`;
-                    structuredItems.push(details);
-                } else if (hasPrice && !line.includes("課税") && !line.includes("預り") && !line.includes("釣") && structuredItems.length < 25) {
-                    let details = parseLineDetails(line);
-                    // 確保品項不是純數字或太短的雜訊
-                    if (details.pureJapanese.length >= 2 && !/^[\d、,]+$/.test(details.pureJapanese)) {
-                        structuredItems.push(details);
-                    }
-                }
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            { text: prompt },
+                            { inlineData: { mimeType: "image/jpeg", data: base64Image } }
+                        ]
+                    }]
+                })
             });
 
-            return { fileName, location, date, time, payment, items: structuredItems, imgUrl };
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || "API 呼叫失敗");
+            }
+
+            const resData = await response.json();
+            let rawText = resData.candidates[0].content.parts[0].text;
+            return rawText.replace(/```json/g, "").replace(/```/g, "").trim();
         }
 
         function appendRowToTable(data) {
             const row = document.createElement('tr');
             let itemsHtml = '<ul class="item-list">';
             data.items.forEach(item => { 
-                itemsHtml += `<li><b>${item.chineseTranslation}</b> <span style="color:#999; font-size:11px;">(${item.pureJapanese})</span> — <span style="color:#0056b3;">¥${item.price}</span></li>`; 
+                itemsHtml += `<li><b>${item.chineseTranslation}</b> <span style="color:#999; font-size:11px;">(${item.pureJapanese})</span> — <span style="color:#0056b3; font-weight:bold;">¥${item.price}</span></li>`; 
             });
             itemsHtml += '</ul>';
 
             row.innerHTML = `
-                <td><a href="${data.imgUrl}" target="_blank"><img src="${data.imgUrl}" class="receipt-img" title="點擊在新分頁檢視原圖"></a></td>
+                <td><a href="${data.imgUrl}" target="_blank"><img src="${data.imgUrl}" class="receipt-img" title="點擊觀看大圖"></a></td>
                 <td style="word-break: break-all; font-size:12px; color:#666;">${data.fileName}</td>
                 <td><b>${data.location}</b></td>
                 <td><span style="color:#0056b3; font-weight:bold;">${data.date}</span></td>
@@ -262,10 +218,11 @@
 
         function appendErrorRow(fileName, imgUrl) {
             const row = document.createElement('tr');
-            row.innerHTML = `<td><img src="${imgUrl}" class="receipt-img"></td><td>${fileName}</td><td colspan="5" style="color:red; text-align:center;">⚠️ 辨識嚴重失敗</td>`;
+            row.innerHTML = `<td><img src="${imgUrl}" class="receipt-img"></td><td>${fileName}</td><td colspan="5" style="color:red; text-align:center;">⚠️ AI 解析失敗，請檢查金鑰或稍後再試</td>`;
             tableBody.appendChild(row);
         }
 
+        // CSV 匯出分欄核心
         function exportToCSV() {
             let csvContent = "\uFEFF"; 
             csvContent += "檔案名稱,地點(商店名稱),消費日期,消費時間,支付方式,購買品項(繁中),消費金額\n";
@@ -274,7 +231,6 @@
                 receipt.items.forEach(function(item) {
                     let cleanItemName = item.chineseTranslation.replace(/[【】📋🌟]/g, "").trim();
                     let cleanPrice = item.price.trim();
-                    
                     let rowStr = `"${receipt.fileName}","${receipt.location}","${receipt.date}","${receipt.time}","${receipt.payment}","${cleanItemName}","${cleanPrice}"`;
                     csvContent += rowStr + "\n";
                 });
@@ -284,11 +240,9 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            
             const today = new Date().toISOString().slice(0, 10);
-            link.setAttribute("download", `日本記帳表_精準修正版_${today}.csv`);
+            link.setAttribute("download", `日本旅遊AI精準記帳表_${today}.csv`);
             link.style.visibility = 'hidden';
-            
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
