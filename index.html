@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日本收據批量自動辨識與匯出系統</title>
+    <title>日本收據批量自動辨識與匯出系統 (精準修正版)</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 1100px; margin: 20px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
@@ -27,7 +27,7 @@
 <body>
 
     <h2>🇯🇵 日本旅遊收據批量智慧辨識系統</h2>
-    <p style="text-align:center; color: #666;">支援多圖同時選取上傳，自動擷取五大核心欄位，並支援完整 CSV 格式匯出。</p>
+    <p style="text-align:center; color: #666;">針對超商收據格式精準優化，支援多圖同時選取上傳，可匯出 CSV 格式。</p>
 
     <div class="upload-area" onclick="document.getElementById('file-input').click()">
         📸 點擊此處或拖曳「一次選取多張」收據照片上傳
@@ -88,7 +88,6 @@
                 statusText.innerText = `[${currentNum}/${files.length}] 正在讀取檔案：${file.name}...`;
                 
                 try {
-                    // 執行 Tesseract 辨識
                     const { data: { text } } = await Tesseract.recognize(
                         file,
                         'jpn',
@@ -100,14 +99,10 @@
                         }}
                     );
 
-                    // 解析五大特徵
                     const parsedData = parseReceiptContent(file.name, text);
                     allReceiptsData.push(parsedData);
-                    
-                    // 渲染到網頁畫面上
                     appendRowToTable(parsedData);
 
-                    // 更新總進度條
                     let totalProgress = Math.round((currentNum / files.length) * 100);
                     progressBar.style.width = `${totalProgress}%`;
 
@@ -117,83 +112,105 @@
                 }
             }
 
-            statusText.innerText = `🎉 太棒了！全部 ${files.length} 張收據已處理完畢。`;
+            statusText.innerText = `🎉 全部 ${files.length} 張收據已處理完畢。`;
             if(allReceiptsData.length > 0) exportBtn.disabled = false;
         });
 
-        // 核心特徵解析邏輯
+        // 進階精準解析邏輯
         function parseReceiptContent(fileName, text) {
-            const lines = text.split('\n').map(line => line.trim()).filter(line => line !== '');
+            // 清理掉常見錯字干擾，將整塊文字切成行
+            const lines = text.split('\n').map(line => line.trim().replace(/\s+/g, '')).filter(line => line !== '');
 
-            // 1. 地點 (通常收據第一行或第二行為店名)
+            // 1. 地點 (商店名稱) 辨識優化
             let location = "未知商店";
-            if (lines.length > 0) {
-                // 排除常見的收據開頭廢字，抓取真正的店名
-                location = lines[0].includes("領収") && lines[1] ? lines[1] : lines[0];
-            }
-
-            // 2. 日期尋找
-            const dateRegex = /(\d{4}年\d{1,2}月\d{1,2}日)|(\d{2,4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2})/;
-            const dateMatch = text.match(dateRegex);
-            let date = dateMatch ? dateMatch[0] : "未偵測到";
-
-            // 3. 時間尋找
-            const timeRegex = /(\d{1,2}:\d.後?\d{1,2})|(\d{1,2}時\d{1,2}分)/;
-            const timeMatch = text.match(timeRegex);
-            let time = timeMatch ? timeMatch[0] : "未偵測到";
-
-            // 4. 支付方式
-            let payment = "現金 (預設)";
             const lowerText = text.toLowerCase();
-            if (text.includes("クレジット") || text.includes("CREDIT") || text.includes("カード") || text.includes("C R E D I T")) {
-                payment = "信用卡";
-            } else if (text.includes("交通系") || text.includes("Suica") || text.includes("PASMO") || text.includes("IC")) {
-                payment = "電子票證 (Suica/PASMO)";
-            } else if (text.includes("PayPay") || text.includes("ペイペイ") || text.includes("コード")) {
-                payment = "行動支付 (PayPay)";
-            } else if (text.includes("商品券") || text.includes("ギフト")) {
-                payment = "特定商品券";
+            
+            // 常見日本連鎖品牌關鍵字庫
+            if (/familymart|ファミリーマート/i.test(lowerText)) {
+                location = "FamilyMart (全家)";
+            } else if (/lawson|ローソン/i.test(lowerText)) {
+                location = "Lawson (羅森)";
+            } else if (/7-eleven|セブン|711/i.test(lowerText)) {
+                location = "7-Eleven";
+            } else if (/donki|donquijote|ドン・キホーテ/i.test(lowerText)) {
+                location = "Don Don Donki (唐吉訶德)";
+            } else if (/æon|aeon|イオン/i.test(lowerText)) {
+                location = "AEON 超市";
+            } else if (lines.length > 0) {
+                // 如果都不是，過濾掉亂碼符號，抓第一行作為店名參考
+                let firstLineClean = lines[0].replace(/[。．\.、，,\[\]\(\)]/g, "");
+                if (firstLineClean.length > 2) location = firstLineClean;
             }
 
-            // 5. 品項與金額擷取 (進階 Regex 篩選)
+            // 2. 日期辨識優化 (排除純數字電話號碼格式)
+            let date = "未偵測到";
+            // 優先尋找明確帶有「年」或「月」或「日」的行
+            const jpDateRegex = /(\d{4}年\d{1,2}月\d{1,2}日)/;
+            const jpDateMatch = text.match(jpDateRegex);
+            
+            if (jpDateMatch) {
+                date = jpDateMatch[0];
+            } else {
+                // 次要尋找 2026.06.05 或是 26.06.05 格式，但限制長度避免撈到電話
+                const slashDateRegex = /\b(\d{2,4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2})\b/;
+                const slashDateMatch = text.match(slashDateRegex);
+                if (slashDateMatch) date = slashDateMatch[0];
+            }
+
+            // 3. 時間辨識優化 (尋找 XX:XX 格式，並排除長串電話)
+            let time = "未偵測到";
+            const timeMatch = text.match(/(?<!\d)(\d{1,2}:\d{2})(?!\d)/);
+            if (timeMatch) {
+                time = timeMatch[0];
+            } else {
+                const jpTimeMatch = text.match(/(\d{1,2}時\d{1,2}分)/);
+                if (jpTimeMatch) time = jpTimeMatch[0];
+            }
+
+            // 4. 支付方式辨識
+            let payment = "現金 (預設)";
+            if (/クレジット|credit|カード/i.test(lowerText)) {
+                payment = "信用卡";
+            } else if (/交通系|suica|pasmo|ic/i.test(lowerText)) {
+                payment = "電子票證 (Suica/PASMO)";
+            } else if (/paypay|ペイペイ/i.test(lowerText)) {
+                payment = "行動支付 (PayPay)";
+            }
+
+            // 5. 購買品項與金額篩選 (徹底剔除電話、登錄番號等雜訊)
             let itemsArray = [];
             let totalAmount = "";
-            
+
             lines.forEach(line => {
-                // 檢查是否包含日本收據常見金額符號或數字結尾
-                const hasPrice = /[\uffe5￥\d,]+\s*(?:点|\b)?$/.test(line) || line.includes("￥") || line.includes("¥");
+                // 雜訊過濾：跳過電話、登錄番號、日期時間行、純符號行
+                if (line.includes("電話") || line.includes("番号") || line.includes("登録") || line.includes("年") || line.includes("月") || line.includes("日")) return;
+                if (/^[\d\-\:\s]+$/.test(line)) return; // 排除純數字與冒號連字號的行
+
+                // 日本品項通常結尾會有「￥金額」或「金額輕（輕稅率）」
+                const hasPrice = /[\uffe5￥¥\d,]+\s*(?:軽|軽税|点)?$/.test(line) || line.includes("￥") || line.includes("¥");
                 
                 if (line.includes("合計") || line.includes("お買上金額") || line.includes("小計")) {
                     totalAmount = line;
-                } else if (hasPrice && !line.includes("課税") && !line.includes("預り") && !line.includes("釣") && itemsArray.length < 8) {
-                    itemsArray.push(line); // 限制前 8 個品項避免表格爆炸
+                } else if (hasPrice && !line.includes("課税") && !line.includes("預り") && !line.includes("釣") && itemsArray.length < 12) {
+                    // 清理掉字首可能因為 OCR 誤判產生的怪異點點符號
+                    let cleanLine = line.replace(/^[@◎\s\•\+\*]+/, "");
+                    itemsArray.push(cleanLine);
                 }
             });
 
-            // 如果沒抓到細項，就把總計當作內容
             if (itemsArray.length === 0 && totalAmount) {
                 itemsArray.push(totalAmount);
             } else if (totalAmount) {
-                itemsArray.push(`--- 【${totalAmount}】 ---`);
+                itemsArray.push(`📋 【${totalAmount}】`);
             }
 
-            const itemsDisplay = itemsArray.length > 0 ? itemsArray : ["未辨識出品項，請參閱總計"];
+            const itemsDisplay = itemsArray.length > 0 ? itemsArray : ["未辨識出品項，請手動確認"];
 
-            return { 
-                fileName, 
-                location: location.replace(/["',]/g, ""), 
-                date, 
-                time, 
-                payment, 
-                items: itemsDisplay 
-            };
+            return { fileName, location, date, time, payment, items: itemsDisplay };
         }
 
-        // 動態將資料插入 HTML 顯示表格
         function appendRowToTable(data) {
             const row = document.createElement('tr');
-            
-            // 建立品項的 HTML 列表
             let itemsHtml = '<ul class="item-list">';
             data.items.forEach(item => { itemsHtml += `<li>${item}</li>`; });
             itemsHtml += '</ul>';
@@ -202,7 +219,7 @@
                 <td>${data.fileName}</td>
                 <td><b>${data.location}</b></td>
                 <td><span style="color:#0056b3;">${data.date}</span></td>
-                <td>${data.time}</td>
+                <td><span style="color:#ff5722; font-weight:bold;">${data.time}</span></td>
                 <td>${itemsHtml}</td>
                 <td><mark style="background-color:#e6ffed; padding:2px 6px; border-radius:4px;">${data.payment}</mark></td>
             `;
@@ -215,13 +232,11 @@
             tableBody.appendChild(row);
         }
 
-        // CSV 匯出引擎 (完美適配 Excel 格式與標點符號轉換)
         function exportToCSV() {
-            let csvContent = "\uFEFF"; // 加入 UTF-8 BOM 防止 Excel 亂碼
+            let csvContent = "\uFEFF"; 
             csvContent += "檔案名稱,地點(商店名稱),消費日期,消費時間,支付方式,購買品項與金額明細\n";
 
             allReceiptsData.forEach(function(row) {
-                // 將品項陣列用「 | 」串接成單一字串，方便放入單一 Excel 儲存格
                 let itemsJoined = row.items.join(" | ");
                 let rowStr = `"${row.fileName}","${row.location}","${row.date}","${row.time}","${row.payment}","${itemsJoined}"`;
                 csvContent += rowStr + "\n";
