@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日本收據自動辨識系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
+        .upload-area { border: 2px dashed #ccc; padding: 30px; text-align: center; cursor: pointer; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        #status { color: blue; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h2>🇯🇵 日本收據智慧辨識</h2>
+    <p>上傳你的日本發票/收據照片，自動解析消費資訊。</p>
+
+    <div class="upload-area" onclick="document.getElementById('file-input').click()">
+        點擊這裡或拖曳收據照片至此
+        <input type="file" id="file-input" accept="image/*" style="display:none">
+    </div>
+
+    <div id="status"></div>
+
+    <h3>📊 辨識結果</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>項目</th>
+                <th>擷取內容 (模擬/擷取)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td><b>商店名稱 (地點)</b></td><td id="res-location">-</td></tr>
+            <tr><td><b>日期</b></td><td id="res-date">-</td></tr>
+            <tr><td><b>時間</b></td><td id="res-time">-</td></tr>
+            <tr><td><b>品項與金額</b></td><td id="res-items">-</td></tr>
+            <tr><td><b>支付方式</b></td><td id="res-payment">-</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const status = document.getElementById('status');
+
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            status.innerText = "正在載入日文辨識引擎，請稍候...";
+
+            // 呼叫 Tesseract.js 辨識日文 (jpn)
+            Tesseract.recognize(
+                file,
+                'jpn', // 指定日文語系
+                { logger: m => { if(m.status === 'recognizing') status.innerText = `辨識進度: ${Math.round(m.progress * 100)}%`; } }
+            ).then(({ data: { text } }) => {
+                status.innerText = "辨識完成！正在解析欄位...";
+                parseReceipt(text);
+            }).catch(err => {
+                status.innerText = "辨識失敗: " + err.message;
+            });
+        });
+
+        // 解析文字的邏輯 (利用關鍵字與正規表達式)
+        function parseReceipt(text) {
+            console.log("原始辨識文字：", text);
+
+            // 1. 日期尋找 (日本常見格式：2026年XX月XX日 或 26.-6.12)
+            const dateRegex = /(\d{4}年\d{1,2}月\d{1,2}日)|(\d{2}\.\d{1,2}\.\d{1,2})/;
+            const dateMatch = text.match(dateRegex);
+            document.getElementById('res-date').innerText = dateMatch ? dateMatch[0] : "未偵測到 (請手動確認)";
+
+            // 2. 時間尋找 (如 13:45 或 13時45分)
+            const timeRegex = /(\d{1,2}:\d{2})|(\d{1,2}時\d{1,2}分)/;
+            const timeMatch = text.match(timeRegex);
+            document.getElementById('res-time').innerText = timeMatch ? timeMatch[0] : "未偵測到";
+
+            // 3. 支付方式常見關鍵字
+            let payment = "現金";
+            if (text.includes("クレジット") || text.includes("CREDIT") || text.includes("カード")) payment = "信用卡";
+            else if (text.includes("交通系") || text.includes("Suica") || text.includes("PASMO")) payment = "交通卡 (Suica/Pasmo)";
+            else if (text.includes("PayPay") || text.includes("コード決済")) payment = "PayPay / 條碼支付";
+            document.getElementById('res-payment').innerText = payment;
+
+            // 4. 地點與品項 (純前端較難精準切割，先顯示總計與前幾行作為參考)
+            // 尋找包含「領収」或第一行通常是店名
+            const lines = text.split('\n').filter(line => line.trim() !== '');
+            document.getElementById('res-location').innerText = lines[0] ? lines[0] : "未知商店";
+            
+            // 找出帶有金錢符號或「合計」的字眼
+            const totalLine = lines.find(l => l.includes("合計") || l.includes("金額") || l.includes("￥"));
+            document.getElementById('res-items').innerText = totalLine ? `總計行：${totalLine}` : "請看主體文字";
+        }
+    </script>
+</body>
+</html>
