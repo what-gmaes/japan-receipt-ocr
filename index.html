@@ -6,52 +6,62 @@
     <title>日本收據批量自動辨識與匯出系統</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 950px; margin: 20px auto; padding: 20px; background-color: #f9f9f9; }
-        .upload-area { border: 2px dashed #007bff; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; background-color: #fff; border-radius: 8px; }
+        body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 1100px; margin: 20px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
+        h2 { color: #1a1a1a; text-align: center; }
+        .upload-area { border: 3px dashed #0056b3; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; background-color: #fff; border-radius: 10px; font-size: 18px; font-weight: bold; transition: 0.3s; }
+        .upload-area:hover { background-color: #e9f2ff; }
         .btn-container { margin: 20px 0; text-align: right; }
-        .btn { background-color: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; }
-        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; background-color: #fff; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background-color: #007bff; color: white; }
-        #status-container { margin: 15px 0; padding: 10px; background: #e9ecef; border-radius: 5px; font-size: 14px; }
-        .progress-bar { height: 5px; background-color: #28a745; width: 0%; transition: width 0.2s; margin-top: 5px; }
+        .btn { background-color: #28a745; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn:disabled { background-color: #bbb; cursor: not-allowed; box-shadow: none; }
+        .table-responsive { overflow-x: auto; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; text-align: left; min-width: 800px; }
+        th, td { border-bottom: 1px solid #eee; padding: 14px; font-size: 14px; vertical-align: top; }
+        th { background-color: #007bff; color: white; font-weight: 600; }
+        tr:hover { background-color: #f8f9fa; }
+        #status-container { margin: 15px 0; padding: 15px; background: #e9ecef; border-radius: 6px; border-left: 5px solid #007bff; }
+        .progress-bar-container { height: 8px; background-color: #ddd; border-radius: 4px; margin-top: 10px; overflow: hidden; }
+        .progress-bar { height: 100%; background-color: #28a745; width: 0%; transition: width 0.3s; }
+        .item-list { margin: 0; padding-left: 18px; font-size: 13px; color: #555; }
     </style>
 </head>
 <body>
 
-    <h2>🇯🇵 日本收據批量智慧辨識系統</h2>
-    <p>可按住 Ctrl 或 Shift 鍵<b>一次選取多張照片</b>上傳。辨識完成後可一鍵匯出為 Excel 支援的 CSV 檔案。</p>
+    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統</h2>
+    <p style="text-align:center; color: #666;">支援多圖同時選取上傳，自動擷取五大核心欄位，並支援完整 CSV 格式匯出。</p>
 
     <div class="upload-area" onclick="document.getElementById('file-input').click()">
-        📁 點擊這裡「一次選取多張」收據照片
+        📸 點擊此處或拖曳「一次選取多張」收據照片上傳
         <input type="file" id="file-input" accept="image/*" multiple style="display:none">
     </div>
 
     <div id="status-container">
-        <div id="status-text">等待上傳檔案...</div>
-        <div class="progress-bar" id="progress-bar"></div>
+        <div id="status-text">請上傳收據照片以開始...</div>
+        <div class="progress-bar-container">
+            <div class="progress-bar" id="progress-bar"></div>
+        </div>
     </div>
 
     <div class="btn-container">
-        <button class="btn" id="export-btn" onclick="exportToCSV()" disabled>📥 匯出為 CSV (Excel)</button>
+        <button class="btn" id="export-btn" onclick="exportToCSV()" disabled>📥 匯出為 CSV (支援 Excel 記帳)</button>
     </div>
 
-    <table>
-        <thead>
-            <tr>
-                <th>檔名</th>
-                <th>商店名稱 (地點)</th>
-                <th>日期</th>
-                <th>時間</th>
-                <th>支付方式</th>
-                <th>總計行資訊</th>
-            </tr>
-        </thead>
-        <tbody id="result-table-body">
-            <tr id="empty-row"><td colspan="6" style="text-align: center; color: #888;">暫無資料，請先上傳收據</td></tr>
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 12%;">檔案名稱</th>
+                    <th style="width: 18%;">地點 (商店名稱)</th>
+                    <th style="width: 12%;">日期</th>
+                    <th style="width: 10%;">時間</th>
+                    <th style="width: 33%;">購買品項與金額</th>
+                    <th style="width: 15%;">支付方式</th>
+                </tr>
+            </thead>
+            <tbody id="result-table-body">
+                <tr id="empty-row"><td colspan="6" style="text-align: center; color: #999; padding: 30px;">目前尚無資料，請先上傳收據檔案。</td></tr>
+            </tbody>
+        </table>
+    </div>
 
     <script>
         const fileInput = document.getElementById('file-input');
@@ -60,43 +70,41 @@
         const tableBody = document.getElementById('result-table-body');
         const exportBtn = document.getElementById('export-btn');
         
-        let allReceiptsData = []; // 用來儲存所有辨識成功的文件資料
+        let allReceiptsData = [];
 
         fileInput.addEventListener('change', async function(e) {
             const files = e.target.files;
             if (files.length === 0) return;
 
-            // 初始化與清空舊資料
             document.getElementById('empty-row')?.remove();
-            statusText.innerText = `準備開始辨識，總共 ${files.length} 張收據...`;
+            statusText.innerText = `已偵測到 ${files.length} 張收據，正在初始化日文辨識引擎...`;
             progressBar.style.width = '0%';
             exportBtn.disabled = true;
 
-            // 依序處理每一張照片
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 const currentNum = i + 1;
                 
-                statusText.innerText = `[${currentNum}/${files.length}] 正在辨識：${file.name}...`;
+                statusText.innerText = `[${currentNum}/${files.length}] 正在讀取檔案：${file.name}...`;
                 
                 try {
-                    // 呼叫 OCR 辨識日文
+                    // 執行 Tesseract 辨識
                     const { data: { text } } = await Tesseract.recognize(
                         file,
                         'jpn',
                         { logger: m => {
                             if(m.status === 'recognizing') {
-                                let fileProgress = Math.round(m.progress * 100);
-                                statusText.innerText = `[${currentNum}/${files.length}] 正在辨識：${file.name} (${fileProgress}%)`;
+                                let fProgress = Math.round(m.progress * 100);
+                                statusText.innerText = `[${currentNum}/${files.length}] 正在辨識：${file.name} (${fProgress}%)`;
                             }
                         }}
                     );
 
-                    // 解析文字
-                    const parsedData = parseReceipt(file.name, text);
+                    // 解析五大特徵
+                    const parsedData = parseReceiptContent(file.name, text);
                     allReceiptsData.push(parsedData);
                     
-                    // 即時渲染到網頁表格上
+                    // 渲染到網頁畫面上
                     appendRowToTable(parsedData);
 
                     // 更新總進度條
@@ -104,84 +112,128 @@
                     progressBar.style.width = `${totalProgress}%`;
 
                 } catch (err) {
-                    console.error(err);
+                    console.error("辨識出錯:", err);
                     appendErrorRow(file.name);
                 }
             }
 
-            statusText.innerText = `🎉 全部 ${files.length} 張收據處理完成！`;
-            if(allReceiptsData.length > 0) exportBtn.disabled = false; // 啟用匯出按鈕
+            statusText.innerText = `🎉 太棒了！全部 ${files.length} 張收據已處理完畢。`;
+            if(allReceiptsData.length > 0) exportBtn.disabled = false;
         });
 
-        // 解析邏輯
-        function parseReceipt(fileName, text) {
-            // 1. 日期尋找
-            const dateRegex = /(\d{4}年\d{1,2}月\d{1,2}日)|(\d{2,4}\.\d{1,2}\.\d{1,2})|(\d{4}-\d{1,2}-\d{1,2})/;
+        // 核心特徵解析邏輯
+        function parseReceiptContent(fileName, text) {
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line !== '');
+
+            // 1. 地點 (通常收據第一行或第二行為店名)
+            let location = "未知商店";
+            if (lines.length > 0) {
+                // 排除常見的收據開頭廢字，抓取真正的店名
+                location = lines[0].includes("領収") && lines[1] ? lines[1] : lines[0];
+            }
+
+            // 2. 日期尋找
+            const dateRegex = /(\d{4}年\d{1,2}月\d{1,2}日)|(\d{2,4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2})/;
             const dateMatch = text.match(dateRegex);
-            const date = dateMatch ? dateMatch[0] : "未偵測到";
+            let date = dateMatch ? dateMatch[0] : "未偵測到";
 
-            // 2. 時間尋找
-            const timeRegex = /(\d{1,2}:\d{2})|(\d{1,2}時\d{1,2}分)/;
+            // 3. 時間尋找
+            const timeRegex = /(\d{1,2}:\d.後?\d{1,2})|(\d{1,2}時\d{1,2}分)/;
             const timeMatch = text.match(timeRegex);
-            const time = timeMatch ? timeMatch[0] : "未偵測到";
+            let time = timeMatch ? timeMatch[0] : "未偵測到";
 
-            // 3. 支付方式
-            let payment = "現金";
-            if (text.includes("クレジット") || text.includes("CREDIT") || text.includes("カード")) payment = "信用卡";
-            else if (text.includes("交通系") || text.includes("Suica") || text.includes("PASMO") || text.includes("IC")) payment = "電子票證(Suica等)";
-            else if (text.includes("PayPay") || text.includes("コード")) payment = "PayPay/條碼支付";
+            // 4. 支付方式
+            let payment = "現金 (預設)";
+            const lowerText = text.toLowerCase();
+            if (text.includes("クレジット") || text.includes("CREDIT") || text.includes("カード") || text.includes("C R E D I T")) {
+                payment = "信用卡";
+            } else if (text.includes("交通系") || text.includes("Suica") || text.includes("PASMO") || text.includes("IC")) {
+                payment = "電子票證 (Suica/PASMO)";
+            } else if (text.includes("PayPay") || text.includes("ペイペイ") || text.includes("コード")) {
+                payment = "行動支付 (PayPay)";
+            } else if (text.includes("商品券") || text.includes("ギフト")) {
+                payment = "特定商品券";
+            }
 
-            // 4. 店名與總金額行
-            const lines = text.split('\n').filter(line => line.trim() !== '');
-            const location = lines[0] ? lines[0].replace(/,/g, " ") : "未知商店"; // 移除逗號避免影響CSV
-            const totalLine = lines.find(l => l.includes("合計") || l.includes("金額") || l.includes("￥"));
-            const items = totalLine ? totalLine.replace(/,/g, " ").trim() : "未偵測到總計";
+            // 5. 品項與金額擷取 (進階 Regex 篩選)
+            let itemsArray = [];
+            let totalAmount = "";
+            
+            lines.forEach(line => {
+                // 檢查是否包含日本收據常見金額符號或數字結尾
+                const hasPrice = /[\uffe5￥\d,]+\s*(?:点|\b)?$/.test(line) || line.includes("￥") || line.includes("¥");
+                
+                if (line.includes("合計") || line.includes("お買上金額") || line.includes("小計")) {
+                    totalAmount = line;
+                } else if (hasPrice && !line.includes("課税") && !line.includes("預り") && !line.includes("釣") && itemsArray.length < 8) {
+                    itemsArray.push(line); // 限制前 8 個品項避免表格爆炸
+                }
+            });
 
-            return { fileName, location, date, time, payment, items };
+            // 如果沒抓到細項，就把總計當作內容
+            if (itemsArray.length === 0 && totalAmount) {
+                itemsArray.push(totalAmount);
+            } else if (totalAmount) {
+                itemsArray.push(`--- 【${totalAmount}】 ---`);
+            }
+
+            const itemsDisplay = itemsArray.length > 0 ? itemsArray : ["未辨識出品項，請參閱總計"];
+
+            return { 
+                fileName, 
+                location: location.replace(/["',]/g, ""), 
+                date, 
+                time, 
+                payment, 
+                items: itemsDisplay 
+            };
         }
 
-        // 把結果塞進網頁表格
+        // 動態將資料插入 HTML 顯示表格
         function appendRowToTable(data) {
             const row = document.createElement('tr');
+            
+            // 建立品項的 HTML 列表
+            let itemsHtml = '<ul class="item-list">';
+            data.items.forEach(item => { itemsHtml += `<li>${item}</li>`; });
+            itemsHtml += '</ul>';
+
             row.innerHTML = `
                 <td>${data.fileName}</td>
                 <td><b>${data.location}</b></td>
-                <td>${data.date}</td>
+                <td><span style="color:#0056b3;">${data.date}</span></td>
                 <td>${data.time}</td>
-                <td>${data.payment}</td>
-                <td>${data.items}</td>
+                <td>${itemsHtml}</td>
+                <td><mark style="background-color:#e6ffed; padding:2px 6px; border-radius:4px;">${data.payment}</mark></td>
             `;
             tableBody.appendChild(row);
         }
 
-        // 錯誤處理顯示
         function appendErrorRow(fileName) {
             const row = document.createElement('tr');
-            row.innerHTML = `<td>${fileName}</td><td colspan="5" style="color:red;">辨識失敗</td>`;
+            row.innerHTML = `<td>${fileName}</td><td colspan="5" style="color:red; text-align:center;">⚠️ 辨識嚴重失敗或格式毀損</td>`;
             tableBody.appendChild(row);
         }
 
-        // 匯出為 CSV 檔案
+        // CSV 匯出引擎 (完美適配 Excel 格式與標點符號轉換)
         function exportToCSV() {
-            // 設定 CSV 標頭
-            let csvContent = "\uFEFF"; // 加入 UTF-8 BOM 防止 Excel 打開中文變亂碼
-            csvContent += "檔案名稱,商店名稱,消費日期,消費時間,支付方式,品項/金額總計\n";
+            let csvContent = "\uFEFF"; // 加入 UTF-8 BOM 防止 Excel 亂碼
+            csvContent += "檔案名稱,地點(商店名稱),消費日期,消費時間,支付方式,購買品項與金額明細\n";
 
-            // 填入每筆資料
             allReceiptsData.forEach(function(row) {
-                let rowStr = `"${row.fileName}","${row.location}","${row.date}","${row.time}","${row.payment}","${row.items}"`;
+                // 將品項陣列用「 | 」串接成單一字串，方便放入單一 Excel 儲存格
+                let itemsJoined = row.items.join(" | ");
+                let rowStr = `"${row.fileName}","${row.location}","${row.date}","${row.time}","${row.payment}","${itemsJoined}"`;
                 csvContent += rowStr + "\n";
             });
 
-            // 建立下載連結
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
             
-            // 拿今天日期當檔名
             const today = new Date().toISOString().slice(0, 10);
-            link.setAttribute("download", `日本旅遊收據統計_${today}.csv`);
+            link.setAttribute("download", `日本戰利品收據統計_${today}.csv`);
             link.style.visibility = 'hidden';
             
             document.body.appendChild(link);
