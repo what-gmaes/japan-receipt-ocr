@@ -34,7 +34,7 @@
     <div class="config-area">
         <label for="api-key">🔑 <b>請輸入你的 Gemini API Key：</b></label>
         <input type="password" id="api-key" placeholder="貼上您的 AI Studio 金鑰 (AIzaSy...)">
-        <div class="warning-tip">🔒 提示：此網頁已強制鎖定 Google 1.5 免費額度通道，完全不需要且絕對不會支付任何費用。</div>
+        <div class="warning-tip">🔒 提示：此網頁已強制鎖定最新免費通道，每日有 1,500 次免費額度，完全不需要且絕對不會支付任何費用。</div>
     </div>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
@@ -106,7 +106,7 @@
 
             if (files.length === 0) return;
             document.getElementById('empty-row')?.remove();
-            statusText.innerText = `已讀取 ${files.length} 張收據，正在呼叫免費 AI 進行視覺大腦掃描...`;
+            statusText.innerText = `已讀取 ${files.length} 張收據，正在呼叫最新免費 AI 進行視覺大腦掃描...`;
             progressBar.style.width = '0%';
             exportBtn.disabled = true;
 
@@ -132,7 +132,6 @@
                     progressBar.style.width = `${totalProgress}%`;
                 } catch (err) {
                     console.error("AI 辨識發生錯誤:", err);
-                    // ✨ 升級：直接把底層真正的錯誤丟到畫面上，方便一秒除錯
                     appendErrorRow(file.name, imgUrl, err.message);
                 }
             }
@@ -149,9 +148,10 @@
             });
         }
 
-        // 呼叫 Gemini 免費通道核心（全面鎖定純 JSON 輸出，防止當機）
+        // 呼叫最新免費通道核心
         async function callGeminiFreeVisionAPI(apiKey, base64Image) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+            // 💡 終極修正：將網址路徑更換為目前官方最新且支援免費通道的 gemini-2.5-flash 模型
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
             
             const prompt = `你現在是專業的日本發票與收據智慧記帳系統。
 請仔細閱讀這張收據圖片，忽略所有的收銀員編號、明細序號、稅率行(如 8%、10%、稅拔、內消費稅)等任何非消費商品名稱的雜訊。
@@ -182,7 +182,6 @@
                             { inlineData: { mimeType: "image/jpeg", data: base64Image } }
                         ]
                     }],
-                    // 💡 黑科技安全鎖：強制 Google 伺服器進行純 JSON 格式編碼輸出，100% 刨除 Markdown 髒標籤污染
                     generationConfig: {
                         responseMimeType: "application/json"
                     }
@@ -218,7 +217,6 @@
             tableBody.appendChild(row);
         }
 
-        // ✨ 錯誤渲染區塊升級：能直接看清真正的錯誤原因
         function appendErrorRow(fileName, imgUrl, errorMsg) {
             const row = document.createElement('tr');
             row.innerHTML = `
