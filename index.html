@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日本收據批量辨識系統 (品項金額分欄+終極純淨版)</title>
+    <title>日本收據批量辨識系統</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 1200px; margin: 20px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
@@ -29,8 +29,8 @@
 </head>
 <body>
 
-    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統</h2>
-    <p style="text-align:center; color: #666;">【終極純淨版】支援原圖對照與拖曳上傳，匯出 CSV 自動實現「品項與價格分欄」，無任何雜訊干擾。</p>
+    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統V0.4</h2>
+
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
         📸 點擊此處或直接「拖曳多張收據照片」至此處上傳
@@ -55,9 +55,9 @@
                     <th style="width: 10%;">收據圖片</th>
                     <th style="width: 12%;">檔案名稱</th>
                     <th style="width: 15%;">地點 (商店)</th>
-                    <th style="width: 10%;">日期</th>
-                    <th style="width: 8%;">時間</th>
-                    <th style="width: 33%;">購買品項與金額 (網頁對照視窗)</th>
+                    <th style="width: 12%;">日期</th>
+                    <th style="width: 10%;">時間</th>
+                    <th style="width: 29%;">購買品項與金額 (網頁對照視窗)</th>
                     <th style="width: 12%;">支付方式</th>
                 </tr>
             </thead>
@@ -95,21 +95,17 @@
 
         // 精密翻譯與資料分離核心
         function parseLineDetails(lineText) {
-            // 1. 擷取價格：精準抓取最後出現的數字群（包含可能伴隨的減號、逗號）
-            // 移除日幣符號、輕稅字樣、空格，只保留純數字
             let priceStr = "";
             let priceMatch = lineText.match(/[-?、,\d]+(?=\s*(?:輕|軽|輕稅|軽税|點|点)?$)/) || lineText.match(/[\uffe5￥\\¥\d,]+$/);
             if (priceMatch) {
                 priceStr = priceMatch[0].replace(/[\uffe5￥\\¥\s,、]/g, "");
             }
 
-            // 2. 擷取品項：把後方的價格、稅率標籤與前方的前綴符號徹底刨除，得到純日文品項
             let pureJapanese = lineText.replace(/[\uffe5￥\\¥\d,，、\s\-\.]+(?:輕|軽|輕稅|軽税|點|点)?$/g, "").trim();
             pureJapanese = pureJapanese.replace(/^[@◎\s\•\+\*]+/, "");
 
-            let chineseTranslation = pureJapanese; // 預設沒對到就用原日文
+            let chineseTranslation = pureJapanese;
 
-            // 3. 查字典比對翻譯（長詞優先）
             const sortedKeywords = Object.keys(translationDictionary).sort((a, b) => b.length - a.length);
             for (let keyword of sortedKeywords) {
                 if (pureJapanese.includes(keyword)) {
@@ -190,18 +186,29 @@
                 if (firstLineClean.length > 2) location = firstLineClean;
             }
 
+            // 2. 日期救援機制優化
             let date = "未偵測到";
             const jpDateMatch = text.match(/(\d{4}年\d{1,2}月\d{1,2}日)/);
-            if (jpDateMatch) date = jpDateMatch[0];
-            else {
-                const slashDateMatch = text.match(/\b(\d{2,4}[\.\-\/]\d{1,2}[\.\-\/]\d{1,2})\b/);
-                if (slashDateMatch) date = slashDateMatch[0];
+            if (jpDateMatch) {
+                date = jpDateMatch[0];
+            } else {
+                // 救援：尋找長得像 2026年06月05日 但漢字漏掉或模糊的行 (例如 2026 6 5 或 2026.6.5)
+                const rescueDateMatch = text.match(/(20\d{2}[年\.\/\s\-]\d{1,2}[月\.\/\s\-]\d{1,2})/);
+                if (rescueDateMatch) {
+                    // 將其轉換成漂亮格式
+                    let cleanDate = rescueDateMatch[0].replace(/[年月\.\/\s\-]/g, '/');
+                    // 去除末尾可能多抓的斜線
+                    if (cleanDate.endsWith('/')) cleanDate = cleanDate.slice(0, -1);
+                    date = cleanDate;
+                }
             }
 
+            // 3. 時間判定
             let time = "未偵測到";
             const timeMatch = text.match(/(?<!\d)(\d{1,2}:\d{2})(?!\d)/);
             if (timeMatch) time = timeMatch[0];
 
+            // 4. 支付方式
             let payment = "現金 (預設)";
             if (/クレジット|credit|カード/i.test(lowerText)) payment = "信用卡";
             else if (/交通系|suica|pasmo|ic/i.test(lowerText)) payment = "電子票證 (Suica/PASMO)";
@@ -210,19 +217,21 @@
             let structuredItems = [];
 
             lines.forEach(line => {
+                // ✨ 核心修正：徹底封殺收銀編號、明細序號等系統廢字
                 if (line.includes("電話") || line.includes("番号") || line.includes("登録") || line.includes("年") || line.includes("月") || line.includes("日")) return;
+                if (line.includes("責任") || line.includes("本責") || line.includes("レジ") || line.includes("担当") || line.includes("No.")) return;
                 if (/^[\d\-\:\s]+$/.test(line)) return;
 
                 const hasPrice = /[\uffe5￥¥\d,]+\s*(?:輕|軽|輕稅|軽税|點|点)?$/.test(line) || line.includes("￥") || line.includes("¥");
                 
                 if (line.includes("合計") || line.includes("お買上金額") || line.includes("小計")) {
                     let details = parseLineDetails(line);
-                    // 強制將總計類品項名稱標記清楚
                     details.chineseTranslation = `【${details.chineseTranslation}】`;
                     structuredItems.push(details);
                 } else if (hasPrice && !line.includes("課税") && !line.includes("預り") && !line.includes("釣") && structuredItems.length < 25) {
                     let details = parseLineDetails(line);
-                    if (details.pureJapanese.length >= 2) {
+                    // 確保品項不是純數字或太短的雜訊
+                    if (details.pureJapanese.length >= 2 && !/^[\d、,]+$/.test(details.pureJapanese)) {
                         structuredItems.push(details);
                     }
                 }
@@ -243,7 +252,7 @@
                 <td><a href="${data.imgUrl}" target="_blank"><img src="${data.imgUrl}" class="receipt-img" title="點擊在新分頁檢視原圖"></a></td>
                 <td style="word-break: break-all; font-size:12px; color:#666;">${data.fileName}</td>
                 <td><b>${data.location}</b></td>
-                <td><span style="color:#0056b3;">${data.date}</span></td>
+                <td><span style="color:#0056b3; font-weight:bold;">${data.date}</span></td>
                 <td><span style="color:#ff5722; font-weight:bold;">${data.time}</span></td>
                 <td>${itemsHtml}</td>
                 <td><mark style="background-color:#e6ffed; padding:2px 6px; border-radius:4px;">${data.payment}</mark></td>
@@ -257,15 +266,12 @@
             tableBody.appendChild(row);
         }
 
-        // --- 核心改進：品項與價格徹底分欄，且無雜訊字眼 ---
         function exportToCSV() {
             let csvContent = "\uFEFF"; 
-            // 標頭新增獨立的「消費金額」欄位
             csvContent += "檔案名稱,地點(商店名稱),消費日期,消費時間,支付方式,購買品項(繁中),消費金額\n";
 
             allReceiptsData.forEach(function(receipt) {
                 receipt.items.forEach(function(item) {
-                    // 清理品項中的任何可能殘留的【】或符號（只留純名稱與數字）
                     let cleanItemName = item.chineseTranslation.replace(/[【】📋🌟]/g, "").trim();
                     let cleanPrice = item.price.trim();
                     
@@ -280,7 +286,7 @@
             link.setAttribute("href", url);
             
             const today = new Date().toISOString().slice(0, 10);
-            link.setAttribute("download", `日本記帳表_純淨分欄版_${today}.csv`);
+            link.setAttribute("download", `日本記帳表_精準修正版_${today}.csv`);
             link.style.visibility = 'hidden';
             
             document.body.appendChild(link);
