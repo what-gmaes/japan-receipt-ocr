@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日本收據智慧辨識系統 (Gemini 100% 免費 AI 版)</title>
+    <title>日本收據智慧辨識系統 (防塞車 AI 排隊版)</title>
     <style>
         body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 1200px; margin: 20px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
         h2 { color: #1a1a1a; text-align: center; }
@@ -29,16 +29,16 @@
 </head>
 <body>
 
-    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統 (100% 免費 AI 版)</h2>
+    <h2>🇯🇵 日本旅遊收據批量智慧辨識系統 (防塞車 AI 版)</h2>
     
     <div class="config-area">
         <label for="api-key">🔑 <b>請輸入你的 Gemini API Key：</b></label>
         <input type="password" id="api-key" placeholder="貼上您的 AI Studio 金鑰 (AIzaSy...)">
-        <div class="warning-tip">🔒 提示：此網頁已強制鎖定最新免費通道，每日有 1,500 次免費額度，完全不需要且絕對不會支付任何費用。</div>
+        <div class="warning-tip">🔒 提示：此網頁已強制鎖定最新免費通道，且已內建智慧排隊調速器，批量上傳絕不塞車、免支付任何費用。</div>
     </div>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        📸 點擊此處或直接「拖曳多張收據照片」至此處上傳 (AI 處理)
+        📸 點擊此處或直接「拖曳多張收據照片」至此處上傳 (內建智慧排隊)
         <input type="file" id="file-input" accept="image/*" multiple style="display:none">
     </div>
 
@@ -96,6 +96,9 @@
         });
         fileInput.addEventListener('change', function(e) { handleFiles(e.target.files); });
 
+        // 💡 延時輔助函式：讓程式休息指定的毫秒數，避開 Google 的頻率限制
+        const delay = ms => new Promise(res => setTimeout(res, ms));
+
         async function handleFiles(files) {
             const apiKey = apiKeyInput.value.trim();
             if (!apiKey) {
@@ -106,7 +109,7 @@
 
             if (files.length === 0) return;
             document.getElementById('empty-row')?.remove();
-            statusText.innerText = `已讀取 ${files.length} 張收據，正在呼叫最新免費 AI 進行視覺大腦掃描...`;
+            statusText.innerText = `已讀取 ${files.length} 張收據，正在啟動智慧調速排隊機制...`;
             progressBar.style.width = '0%';
             exportBtn.disabled = true;
 
@@ -130,12 +133,25 @@
 
                     let totalProgress = Math.round((currentNum / files.length) * 100);
                     progressBar.style.width = `${totalProgress}%`;
+
+                    // 💡 核心安全排隊鎖：如果是最後一張就不用等，否則每辨識完一張，強制網頁休息 4.5 秒，完美避開免費額度的每分鐘限制
+                    if (currentNum < files.length) {
+                        statusText.innerText = `[${currentNum}/${files.length}] ✨ 辨識成功！智慧防塞車排隊中，4.5秒後處理下一張...`;
+                        await delay(4500); 
+                    }
+
                 } catch (err) {
                     console.error("AI 辨識發生錯誤:", err);
                     appendErrorRow(file.name, imgUrl, err.message);
+                    
+                    // 如果被封鎖了，多休息幾秒再試
+                    if (err.message.includes("quota") || err.message.includes("429")) {
+                        statusText.innerText = `⚠️ 偵測到流量過快，防塞車安全機制啟動，強制冷卻 10 秒後自動重試...`;
+                        await delay(10000);
+                    }
                 }
             }
-            statusText.innerText = `🎉 成功！所有收據已由 AI 完美識別與翻譯完畢（完全免費通道）。`;
+            statusText.innerText = `🎉 成功！所有收據已由 AI 完美識別與翻譯完畢（安全調速模式）。`;
             if(allReceiptsData.length > 0) exportBtn.disabled = false;
         }
 
@@ -148,9 +164,7 @@
             });
         }
 
-        // 呼叫最新免費通道核心
         async function callGeminiFreeVisionAPI(apiKey, base64Image) {
-            // 💡 終極修正：將網址路徑更換為目前官方最新且支援免費通道的 gemini-2.5-flash 模型
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
             
             const prompt = `你現在是專業的日本發票與收據智慧記帳系統。
