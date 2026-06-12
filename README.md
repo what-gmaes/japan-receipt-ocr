@@ -1,3 +1,5 @@
+網址https://linjk0621.github.io/japan-receipt-ocr/
+
 # 🇯🇵 日本旅遊 AI 智慧收據記帳系統
 
 一個完全架設在 GitHub Pages 上的 Serverless 記帳神器！出國帶回的大量日本收據（全家、小七、羅森、LoFT 等），直接**批量拖曳上傳**，AI 就會自動辨識時間、日期、地點、將品項精準翻譯成**繁體中文**並將金額獨立分欄，最後一鍵匯出成完美相容 Excel、絕不亂碼的 CSV 記帳表！
